@@ -1,6 +1,9 @@
 from datetime import datetime
+from threading import Thread
 import telebot
 from models import User, Todo
+import schedule
+import time
 
 
 bot = telebot.TeleBot('5396285529:AAGODUcC6QAr34VbeCACbFfoOcgI2T_Lf5Q')
@@ -14,10 +17,8 @@ def start_handler(message):
     bot.send_message(message.chat.id, f"Hello {message.chat.first_name} {message.chat.last_name}!")
 
 
-
-@bot.message_handler(commands=['today', 't'])
-def get_todo_list(message):
-    user = User.get(User.chat_id == message.chat.id)
+def create_all_todo_message(chat_id):
+    user = User.get(User.chat_id == chat_id)
     todos = Todo.select().where(Todo.user == user, Todo.date == datetime.today())
     message_text = []
 
@@ -26,8 +27,14 @@ def get_todo_list(message):
             message_text.append(f"<b><s>{todo.id}. {todo.task}</s></b>\n")
         else:
             message_text.append(f"<b>{todo.id}. {todo.task}</b>\n")
+    
+    return "".join(message_text)
 
-    bot.send_message(message.chat.id, "".join(message_text), parse_mode='HTML')
+
+
+@bot.message_handler(commands=['today', 't'])
+def get_todo_list(message):
+    bot.send_message(message.chat.id, create_all_todo_message(message.chat.id), parse_mode='HTML')
 
 
 
@@ -50,4 +57,22 @@ def create_todo_handler(message):
 
 
 
-bot.infinity_polling()
+def check_notify():
+    for user in User.select():
+        todos = Todo.select().where(Todo.user == user, Todo.date == datetime.today(), Todo.is_done == False)
+        if todos:
+            bot.send_message(user.chat_id,create_all_todo_message(user.chat_id), parse_mode='HTML')
+
+
+
+def run_scheduler():
+    schedule.every(1).hours.do(check_notify)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+
+
+if __name__ == "__main__":
+    Thread(target=run_scheduler).start()
+    bot.infinity_polling()
